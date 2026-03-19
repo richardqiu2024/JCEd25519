@@ -76,7 +76,7 @@ public class AppletTest extends BaseTest {
         CommandAPDU cmd = new CommandAPDU(Consts.CLA_ED25519, Consts.INS_KEYGEN, offload ? 1 : 0, 0);
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         Assert.assertNotNull(responseAPDU);
-        Assert.assertEquals(0x9000, responseAPDU.getSW());
+        Assert.assertEquals(String.format("KEYGEN failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
         Assert.assertNotNull(responseAPDU.getBytes());
         Assert.assertEquals(offload ? 65 : 32, responseAPDU.getData().length);
         byte[] result = responseAPDU.getData();
@@ -86,7 +86,7 @@ public class AppletTest extends BaseTest {
             cmd = new CommandAPDU(Consts.CLA_ED25519, Consts.INS_SET_PUB, 0, 0, result);
             responseAPDU = cm.transmit(cmd);
             Assert.assertNotNull(responseAPDU);
-            Assert.assertEquals(0x9000, responseAPDU.getSW());
+            Assert.assertEquals(String.format("SET_PUB failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
             Assert.assertNotNull(responseAPDU.getBytes());
         }
         return result;
@@ -97,7 +97,7 @@ public class AppletTest extends BaseTest {
         ResponseAPDU responseAPDU = cm.transmit(cmd);
         pw.printf("%d,", cm.getLastTransmitTime());
         Assert.assertNotNull(responseAPDU);
-        Assert.assertEquals(0x9000, responseAPDU.getSW());
+        Assert.assertEquals(String.format("SIGN_INIT failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
         Assert.assertNotNull(responseAPDU.getBytes());
         Assert.assertEquals(offload ? 65 : 0, responseAPDU.getData().length);
         byte[] resp = responseAPDU.getData();
@@ -106,7 +106,7 @@ public class AppletTest extends BaseTest {
             responseAPDU = cm.transmit(cmd);
             pw.printf("%d,", cm.getLastTransmitTime());
             Assert.assertNotNull(responseAPDU);
-            Assert.assertEquals(0x9000, responseAPDU.getSW());
+            Assert.assertEquals(String.format("SIGN_NONCE failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
             Assert.assertNotNull(responseAPDU.getBytes());
             Assert.assertEquals(0, responseAPDU.getData().length);
         }
@@ -114,7 +114,7 @@ public class AppletTest extends BaseTest {
         cmd = new CommandAPDU(Consts.CLA_ED25519, Consts.INS_GET_PRIV_NONCE, 0, 0);
         responseAPDU = cm.transmit(cmd);
         Assert.assertNotNull(responseAPDU);
-        Assert.assertEquals(0x9000, responseAPDU.getSW());
+        Assert.assertEquals(String.format("GET_PRIV_NONCE failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
         Assert.assertNotNull(responseAPDU.getBytes());
         Assert.assertEquals(32, responseAPDU.getData().length);
         for(int i = 0; i < 32; ++i) {
@@ -126,7 +126,7 @@ public class AppletTest extends BaseTest {
         responseAPDU = cm.transmit(cmd);
         pw.printf("%d,", cm.getLastTransmitTime());
         Assert.assertNotNull(responseAPDU);
-        Assert.assertEquals(0x9000, responseAPDU.getSW());
+        Assert.assertEquals(String.format("SIGN_UPDATE failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
         Assert.assertNotNull(responseAPDU.getBytes());
         Assert.assertEquals(0, responseAPDU.getData().length);
 
@@ -134,7 +134,7 @@ public class AppletTest extends BaseTest {
         responseAPDU = cm.transmit(cmd);
         pw.printf("%d\n", cm.getLastTransmitTime());
         Assert.assertNotNull(responseAPDU);
-        Assert.assertEquals(0x9000, responseAPDU.getSW());
+        Assert.assertEquals(String.format("SIGN_FINALIZE failed, SW=%04X", responseAPDU.getSW()), 0x9000, responseAPDU.getSW());
         Assert.assertNotNull(responseAPDU.getBytes());
         Assert.assertEquals(64, responseAPDU.getData().length);
         return responseAPDU.getData();
@@ -142,7 +142,8 @@ public class AppletTest extends BaseTest {
 
     @Test
     public void keygen_and_sign() throws Exception {
-        final PrintWriter pw = new PrintWriter(new FileWriter("measurement.csv"));
+        String measurementFile = System.getProperty("jc.test.measurementFile", "measurement.csv");
+        final PrintWriter pw = new PrintWriter(new FileWriter(measurementFile));
         pw.println("sign_init,sign_nonce,nonce,sign_update,sign_finalize");
 
         final CardManager cm = connect();

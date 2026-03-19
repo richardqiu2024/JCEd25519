@@ -7,13 +7,15 @@ import jced25519.swalgs.*;
 
 public class JCEd25519 extends Applet {
     public final static boolean DEBUG = true;
-    public final static short CARD = OperationSupport.SIMULATOR; // TODO set your card
-    // public final static short CARD = OperationSupport.JCOP4_P71; // NXP J3Rxxx
+    //public final static short CARD = OperationSupport.SIMULATOR; // TODO set your card
+    public final static short CARD = OperationSupport.JCOP4_P71; // NXP J3Rxxx
     // public final static short CARD = OperationSupport.JCOP3_P60; // NXP J3H145
     // public final static short CARD = OperationSupport.JCOP21;    // NXP J2E145
     // public final static short CARD = OperationSupport.SECORA;    // Infineon Secora ID S
+    public final static byte DEFAULT_ALLOCATOR_STRATEGY = ObjectAllocator.ALLOCATOR_STRATEGY_TRADEOFF;
 
     private byte state = Consts.STATE_UNINITIALIZED;
+    private final byte allocatorStrategy;
 
     private ResourceManager rm;
     private ECCurve curve;
@@ -37,6 +39,7 @@ public class JCEd25519 extends Applet {
 
     public JCEd25519(byte[] buffer, short offset, byte length) {
         OperationSupport.getInstance().setCard(CARD);
+        allocatorStrategy = parseAllocatorStrategy(buffer, offset);
         register();
     }
 
@@ -127,34 +130,63 @@ public class JCEd25519 extends Applet {
     private void initialize(APDU apdu) {
         if (state != Consts.STATE_UNINITIALIZED)
             ISOException.throwIt(Consts.E_ALREADY_INITIALIZED);
-
+        byte initStage = (byte) 0;
         try {
-            hasher = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
+            initStage = (byte) 1;
+            try {
+                hasher = MessageDigest.getInstance(MessageDigest.ALG_SHA_512, false);
+            } catch (CryptoException e) {
+                hasher = new Sha2(Sha2.SHA_512);
+            }
+
+            initStage = (byte) 2;
+            rm = new ResourceManager((short) 256, allocatorStrategy);
+
+            initStage = (byte) 3;
+            privateKey = new BigNat((short) 32, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
+
+            initStage = (byte) 4;
+            privateNonce = new BigNat((short) 64, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, rm);
+            signature = new BigNat((short) 64, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, rm);
+
+            initStage = (byte) 5;
+            transformC = new BigNat((short) Consts.TRANSFORM_C.length, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
+            transformC.fromByteArray(Consts.TRANSFORM_C, (short) 0, (short) Consts.TRANSFORM_C.length);
+            transformA3 = new BigNat((short) Consts.TRANSFORM_A3.length, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
+            transformA3.fromByteArray(Consts.TRANSFORM_A3, (short) 0, (short) Consts.TRANSFORM_A3.length);
+            transformX = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
+            transformY = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
+
+            initStage = (byte) 6;
+            eight = new BigNat((short) 1,  JCSystem.MEMORY_TYPE_PERSISTENT, rm);
+            eight.setValue((byte) 8);
+
+            initStage = (byte) 7;
+            curve = new ECCurve(Wei25519.p, Wei25519.a, Wei25519.b, Wei25519.G, Wei25519.r, Wei25519.k, rm);
+
+            initStage = (byte) 8;
+            point = new ECPoint(curve);
+
+            state = Consts.STATE_INITIALIZED;
+        } catch (ISOException e) {
+            throw e;
         } catch (CryptoException e) {
-            hasher = new Sha2(Sha2.SHA_512);
+            short sw = (short) 0xE100;
+            sw += initStage;
+            ISOException.throwIt(sw);
+        } catch (SystemException e) {
+            short sw = (short) 0xE200;
+            sw += initStage;
+            ISOException.throwIt(sw);
+        } catch (CardRuntimeException e) {
+            short sw = (short) 0xE300;
+            sw += initStage;
+            ISOException.throwIt(sw);
+        } catch (Exception e) {
+            short sw = (short) 0xE400;
+            sw += initStage;
+            ISOException.throwIt(sw);
         }
-
-        rm = new ResourceManager((short) 256);
-
-        privateKey = new BigNat((short) 32, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
-
-        privateNonce = new BigNat((short) 64, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, rm);
-        signature = new BigNat((short) 64, JCSystem.MEMORY_TYPE_TRANSIENT_DESELECT, rm);
-
-        transformC = new BigNat((short) Consts.TRANSFORM_C.length, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
-        transformC.fromByteArray(Consts.TRANSFORM_C, (short) 0, (short) Consts.TRANSFORM_C.length);
-        transformA3 = new BigNat((short) Consts.TRANSFORM_A3.length, JCSystem.MEMORY_TYPE_PERSISTENT, rm);
-        transformA3.fromByteArray(Consts.TRANSFORM_A3, (short) 0, (short) Consts.TRANSFORM_A3.length);
-        transformX = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
-        transformY = new BigNat((short) 32, JCSystem.MEMORY_TYPE_TRANSIENT_RESET, rm);
-
-        eight = new BigNat((short) 1,  JCSystem.MEMORY_TYPE_PERSISTENT, rm);
-        eight.setValue((byte) 8);
-
-        curve = new ECCurve(Wei25519.p, Wei25519.a, Wei25519.b, Wei25519.G, Wei25519.r, Wei25519.k, rm);
-        point = new ECPoint(curve);
-
-        state = Consts.STATE_INITIALIZED;;
     }
 
     private void generateKeypair(APDU apdu) {
@@ -332,5 +364,26 @@ public class JCEd25519 extends Applet {
         privateNonce.fromByteArray(ramArray, (short) 0, (short) 32);
         privateNonce.mod(curve.rBN);
         privateNonce.resize((short) 32);
+    }
+
+    private byte parseAllocatorStrategy(byte[] buffer, short offset) {
+        short cursor = offset;
+        cursor += (short) (1 + (short) (buffer[cursor] & 0xff)); // instance AID
+        cursor += (short) (1 + (short) (buffer[cursor] & 0xff)); // control info
+        byte appletDataLength = buffer[cursor];
+        cursor++;
+
+        if (appletDataLength <= (byte) 0) {
+            return DEFAULT_ALLOCATOR_STRATEGY;
+        }
+
+        byte strategy = buffer[cursor];
+        if (strategy == ObjectAllocator.ALLOCATOR_STRATEGY_RAM ||
+                strategy == ObjectAllocator.ALLOCATOR_STRATEGY_TRADEOFF ||
+                strategy == ObjectAllocator.ALLOCATOR_STRATEGY_EEPROM) {
+            return strategy;
+        }
+
+        return DEFAULT_ALLOCATOR_STRATEGY;
     }
 }

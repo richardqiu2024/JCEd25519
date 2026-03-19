@@ -67,7 +67,7 @@ public class BaseTest {
         // System.setProperty("com.licel.jcardsim.randomdata.secure", "1");
 
         runCfg.setTestCardType(cardType);
-        runCfg.setTargetReaderIndex(0);
+        runCfg.setTargetReaderIndex(resolveTargetReaderIndex());
 
         if (cardType == CardType.REMOTE){
             runCfg.setRemoteAddress("http://127.0.0.1:9901");
@@ -90,6 +90,19 @@ public class BaseTest {
         }
 
         return cardMngr;
+    }
+
+    private int resolveTargetReaderIndex() {
+        String configuredIndex = System.getProperty("jc.test.readerIndex");
+        if (configuredIndex == null || configuredIndex.trim().isEmpty()) {
+            configuredIndex = System.getenv("JC_TEST_READER_INDEX");
+        }
+
+        if (configuredIndex == null || configuredIndex.trim().isEmpty()) {
+            return 0;
+        }
+
+        return Integer.parseInt(configuredIndex.trim());
     }
 
     /**

@@ -2,6 +2,8 @@ package jced25519;
 
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
+import javacard.framework.CardRuntimeException;
+import javacard.framework.SystemException;
 import javacard.framework.Util;
 import javacard.security.*;
 import javacardx.crypto.Cipher;
@@ -2011,6 +2013,10 @@ public class jcmathlib {
         short allocatedInEEPROM = 0;
         byte[] ALLOCATOR_TYPE_ARRAY;
 
+        public static final byte ALLOCATOR_STRATEGY_RAM = 0;
+        public static final byte ALLOCATOR_STRATEGY_TRADEOFF = 1;
+        public static final byte ALLOCATOR_STRATEGY_EEPROM = 2;
+
         public static final byte ARRAY_A = 0;
         public static final byte ARRAY_B = 1;
         public static final byte BN_WORD = 2;
@@ -2302,113 +2308,158 @@ public class jcmathlib {
         public final short MAX_POINT_SIZE;
         public final short MAX_COORD_SIZE;
 
-        public ResourceManager(short maxEcLength) {
+        public ResourceManager(short maxEcLength, byte allocatorStrategy) {
+            short maxExpBitLength = (short) 0;
+            short maxSqBitLength = (short) 0;
+            short maxPointSize = (short) 0;
+
             short min = OperationSupport.getInstance().MIN_RSA_BIT_LENGTH;
             if (maxEcLength <= (short) 256) {
-                MAX_EXP_BIT_LENGTH = (short) 512 < min ? min : (short) 512;
-                MAX_SQ_BIT_LENGTH = (short) 768 < min ? min : (short) 768;
-                MAX_POINT_SIZE = (short) 64;
+                maxExpBitLength = (short) 512 < min ? min : (short) 512;
+                maxSqBitLength = (short) 768 < min ? min : (short) 768;
+                maxPointSize = (short) 64;
             }
             else if (maxEcLength <= (short) 384) {
-                MAX_EXP_BIT_LENGTH = (short) 768 < min ? min : (short) 768;
-                MAX_SQ_BIT_LENGTH = (short) 1024 < min ? min : (short) 1024;
-                MAX_POINT_SIZE = (short) 96;
+                maxExpBitLength = (short) 768 < min ? min : (short) 768;
+                maxSqBitLength = (short) 1024 < min ? min : (short) 1024;
+                maxPointSize = (short) 96;
             }
             else if (maxEcLength <= (short) 512) {
-                MAX_EXP_BIT_LENGTH = (short) 1024 < min ? min : (short) 1024;
-                MAX_SQ_BIT_LENGTH = (short) 1280 < min ? min : (short) 1280;
-                MAX_POINT_SIZE = (short) 128;
+                maxExpBitLength = (short) 1024 < min ? min : (short) 1024;
+                maxSqBitLength = (short) 1280 < min ? min : (short) 1280;
+                maxPointSize = (short) 128;
             }
             else {
-                MAX_EXP_BIT_LENGTH = (short) 0;
-                MAX_SQ_BIT_LENGTH = (short) 0;
-                MAX_POINT_SIZE = (short) 0;
                 ISOException.throwIt(ReturnCodes.SW_ECPOINT_INVALIDLENGTH);
             }
+
+            MAX_EXP_BIT_LENGTH = maxExpBitLength;
+            MAX_SQ_BIT_LENGTH = maxSqBitLength;
+            MAX_POINT_SIZE = maxPointSize;
             MAX_SQ_LENGTH = (short) (MAX_SQ_BIT_LENGTH / 8);
             MAX_EXP_LENGTH = (short) (MAX_EXP_BIT_LENGTH / 8);
             MAX_BIGNAT_SIZE = (short) (MAX_EXP_BIT_LENGTH / 8);
             MAX_COORD_SIZE = (short) (MAX_POINT_SIZE / 2);
 
-            memAlloc = new ObjectAllocator();
-            memAlloc.setAllAllocatorsRAM();
-            // if required, memory for helper objects and arrays can be in persistent memory to save RAM (or some tradeoff)
-            // ObjectAllocator.setAllAllocatorsEEPROM();
-            // ObjectAllocator.setAllocatorsTradeoff();
-
-
-            ARRAY_A = memAlloc.allocateByteArray(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.ARRAY_A));
-            ARRAY_B = memAlloc.allocateByteArray(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.ARRAY_B));
-            POINT_ARRAY_A = memAlloc.allocateByteArray((short) (MAX_POINT_SIZE + 1), memAlloc.getAllocatorType(ObjectAllocator.POINT_ARRAY_A));
-            POINT_ARRAY_B = memAlloc.allocateByteArray((short) (MAX_POINT_SIZE + 1), memAlloc.getAllocatorType(ObjectAllocator.POINT_ARRAY_B));
-            hashEngine = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-            HASH_ARRAY = memAlloc.allocateByteArray(hashEngine.getLength(), memAlloc.getAllocatorType(ObjectAllocator.HASH_ARRAY));
-
-            BN_WORD = new BigNat((short) 2, memAlloc.getAllocatorType(ObjectAllocator.BN_WORD), this);
-
-            BN_A = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_A), this);
-            BN_B = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_B), this);
-            BN_C = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_C), this);
-            BN_D = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_D), this);
-            BN_E = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_E), this);
-            BN_F = new BigNat(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.BN_F), this);
-            BN_G = new BigNat(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.BN_G), this);
-
-            EC_BN_A = new BigNat(MAX_POINT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_A), this);
-            EC_BN_B = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_B), this);
-            EC_BN_C = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_C), this);
-            EC_BN_D = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_D), this);
-            EC_BN_E = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_E), this);
-            EC_BN_F = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_F), this);
-
-            // Allocate BN constants always in EEPROM (only reading)
-            TWO = new BigNat((short) 1, JCSystem.MEMORY_TYPE_PERSISTENT, this);
-            TWO.setValue((byte) 2);
-            THREE = new BigNat((short) 1, JCSystem.MEMORY_TYPE_PERSISTENT, this);
-            THREE.setValue((byte) 3);
-            ONE_COORD = new BigNat(MAX_COORD_SIZE, JCSystem.MEMORY_TYPE_PERSISTENT, this);
-            ONE_COORD.setValue((byte) 1);
-            // ECC Helpers
-            if (OperationSupport.getInstance().EC_HW_XY) {
-                // ecMultKA = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
-                ecMultKA = KeyAgreement.getInstance((byte) 6, false);
-            } else if (OperationSupport.getInstance().EC_HW_X) {
-                // ecMultKA = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
-                ecMultKA = KeyAgreement.getInstance((byte) 3, false);
-            }
-            // verifyEcdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
-            verifyEcdsa = Signature.getInstance((byte) 33, false);
-            if (OperationSupport.getInstance().EC_HW_ADD) {
-                // ecAddKA = KeyAgreement.getInstance(KeyAgreement.ALG_EC_PACE_GM, false);
-                ecAddKA = KeyAgreement.getInstance((byte) 5, false);
-            }
-
-            // RSA Sq Helpers
-            if (OperationSupport.getInstance().RSA_SQ) {
-                Util.arrayFillNonAtomic(ARRAY_A, (short) 0, MAX_SQ_LENGTH, (byte) 0xff);
-                sqCiph = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
-                modSqCiph = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
-                if (OperationSupport.getInstance().RSA_PUB) {
-                    modSqPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, MAX_EXP_BIT_LENGTH, false);
-                    sqPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, MAX_SQ_BIT_LENGTH, false);
-                    sqPub.setExponent(CONST_TWO, (short) 0, (short) CONST_TWO.length);
-                    sqPub.setModulus(ARRAY_A, (short) 0, MAX_SQ_LENGTH);
-                    sqCiph.init(sqPub, Cipher.MODE_ENCRYPT);
-                } else {
-                    modSqPriv = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, MAX_EXP_BIT_LENGTH, false);
-                    sqPriv = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, MAX_SQ_BIT_LENGTH, false);
-                    sqPriv.setExponent(CONST_TWO, (short) 0, (short) CONST_TWO.length);
-                    sqPriv.setModulus(ARRAY_A, (short) 0, MAX_SQ_LENGTH);
-                    sqCiph.init(sqPriv, Cipher.MODE_DECRYPT);
+            short initStage = (short) 0;
+            try {
+                initStage = (short) 1;
+                initStage = (short) 2;
+                memAlloc = new ObjectAllocator();
+                switch (allocatorStrategy) {
+                    case ObjectAllocator.ALLOCATOR_STRATEGY_RAM:
+                        memAlloc.setAllAllocatorsRAM();
+                        break;
+                    case ObjectAllocator.ALLOCATOR_STRATEGY_EEPROM:
+                        memAlloc.setAllAllocatorsEEPROM();
+                        break;
+                    case ObjectAllocator.ALLOCATOR_STRATEGY_TRADEOFF:
+                    default:
+                        // Prefer the mixed strategy on physical cards: it reduces transient RAM pressure
+                        // while keeping the hottest helpers in RAM.
+                        memAlloc.setAllocatorsTradeoff();
+                        break;
                 }
+
+                initStage = (short) 3;
+                ARRAY_A = memAlloc.allocateByteArray(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.ARRAY_A));
+                ARRAY_B = memAlloc.allocateByteArray(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.ARRAY_B));
+                POINT_ARRAY_A = memAlloc.allocateByteArray((short) (MAX_POINT_SIZE + 1), memAlloc.getAllocatorType(ObjectAllocator.POINT_ARRAY_A));
+                POINT_ARRAY_B = memAlloc.allocateByteArray((short) (MAX_POINT_SIZE + 1), memAlloc.getAllocatorType(ObjectAllocator.POINT_ARRAY_B));
+                hashEngine = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+                HASH_ARRAY = memAlloc.allocateByteArray(hashEngine.getLength(), memAlloc.getAllocatorType(ObjectAllocator.HASH_ARRAY));
+
+                initStage = (short) 4;
+                BN_WORD = new BigNat((short) 2, memAlloc.getAllocatorType(ObjectAllocator.BN_WORD), this);
+
+                BN_A = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_A), this);
+                BN_B = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_B), this);
+                BN_C = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_C), this);
+                BN_D = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_D), this);
+                BN_E = new BigNat(MAX_BIGNAT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.BN_E), this);
+                BN_F = new BigNat(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.BN_F), this);
+                BN_G = new BigNat(MAX_SQ_LENGTH, memAlloc.getAllocatorType(ObjectAllocator.BN_G), this);
+
+                EC_BN_A = new BigNat(MAX_POINT_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_A), this);
+                EC_BN_B = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_B), this);
+                EC_BN_C = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_C), this);
+                EC_BN_D = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_D), this);
+                EC_BN_E = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_E), this);
+                EC_BN_F = new BigNat(MAX_COORD_SIZE, memAlloc.getAllocatorType(ObjectAllocator.EC_BN_F), this);
+
+                initStage = (short) 5;
+                // Allocate BN constants always in EEPROM (only reading)
+                TWO = new BigNat((short) 1, JCSystem.MEMORY_TYPE_PERSISTENT, this);
+                TWO.setValue((byte) 2);
+                THREE = new BigNat((short) 1, JCSystem.MEMORY_TYPE_PERSISTENT, this);
+                THREE.setValue((byte) 3);
+                ONE_COORD = new BigNat(MAX_COORD_SIZE, JCSystem.MEMORY_TYPE_PERSISTENT, this);
+                ONE_COORD.setValue((byte) 1);
+
+                initStage = (short) 6;
+                // ECC Helpers
+                if (OperationSupport.getInstance().EC_HW_XY) {
+                    // ecMultKA = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN_XY, false);
+                    ecMultKA = KeyAgreement.getInstance((byte) 6, false);
+                } else if (OperationSupport.getInstance().EC_HW_X) {
+                    // ecMultKA = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
+                    ecMultKA = KeyAgreement.getInstance((byte) 3, false);
+                }
+
+                initStage = (short) 7;
+                // verifyEcdsa = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
+                verifyEcdsa = Signature.getInstance((byte) 33, false);
+
+                initStage = (short) 8;
+                if (OperationSupport.getInstance().EC_HW_ADD) {
+                    // ecAddKA = KeyAgreement.getInstance(KeyAgreement.ALG_EC_PACE_GM, false);
+                    ecAddKA = KeyAgreement.getInstance((byte) 5, false);
+                }
+
+                initStage = (short) 9;
+                // RSA Sq Helpers
+                if (OperationSupport.getInstance().RSA_SQ) {
+                    Util.arrayFillNonAtomic(ARRAY_A, (short) 0, MAX_SQ_LENGTH, (byte) 0xff);
+                    sqCiph = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
+                    modSqCiph = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
+                    if (OperationSupport.getInstance().RSA_PUB) {
+                        modSqPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, MAX_EXP_BIT_LENGTH, false);
+                        sqPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, MAX_SQ_BIT_LENGTH, false);
+                        sqPub.setExponent(CONST_TWO, (short) 0, (short) CONST_TWO.length);
+                        sqPub.setModulus(ARRAY_A, (short) 0, MAX_SQ_LENGTH);
+                        sqCiph.init(sqPub, Cipher.MODE_ENCRYPT);
+                    } else {
+                        modSqPriv = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, MAX_EXP_BIT_LENGTH, false);
+                        sqPriv = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, MAX_SQ_BIT_LENGTH, false);
+                        sqPriv.setExponent(CONST_TWO, (short) 0, (short) CONST_TWO.length);
+                        sqPriv.setModulus(ARRAY_A, (short) 0, MAX_SQ_LENGTH);
+                        sqCiph.init(sqPriv, Cipher.MODE_DECRYPT);
+                    }
+                }
+
+                initStage = (short) 10;
+                // RSA Exp Helpers
+                expPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, MAX_EXP_BIT_LENGTH, false);
+                expPriv = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, MAX_EXP_BIT_LENGTH, false);
+                expCiph = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
+
+                initStage = (short) 11;
+                rng = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
+            } catch (ISOException e) {
+                throw e;
+            } catch (CryptoException e) {
+                short sw = (short) 0xEC00;
+                sw += initStage;
+                ISOException.throwIt(sw);
+            } catch (SystemException e) {
+                short sw = (short) 0xED00;
+                sw += initStage;
+                ISOException.throwIt(sw);
+            } catch (CardRuntimeException e) {
+                short sw = (short) 0xEE00;
+                sw += initStage;
+                ISOException.throwIt(sw);
             }
-
-            // RSA Exp Helpers
-            expPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, MAX_EXP_BIT_LENGTH, false);
-            expPriv = (RSAPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PRIVATE, MAX_EXP_BIT_LENGTH, false);
-            expCiph = Cipher.getInstance(Cipher.ALG_RSA_NOPAD, false);
-
-            rng = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
         }
 
         /**

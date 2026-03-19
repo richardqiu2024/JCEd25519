@@ -78,11 +78,25 @@ task dumpClassPath(dependsOn: ['idea']) {
 
 test {
     // useTestNG()
+    if (System.getProperty('jc.test.readerIndex') != null) {
+        systemProperty 'jc.test.readerIndex', System.getProperty('jc.test.readerIndex')
+    }
+    if (System.getProperty('jc.test.measurementFile') != null) {
+        systemProperty 'jc.test.measurementFile', System.getProperty('jc.test.measurementFile')
+    }
+
     useJUnitPlatform {
         excludeTags 'manual'
     }
 
     task manualTests(type: Test) {
+        if (System.getProperty('jc.test.readerIndex') != null) {
+            systemProperty 'jc.test.readerIndex', System.getProperty('jc.test.readerIndex')
+        }
+        if (System.getProperty('jc.test.measurementFile') != null) {
+            systemProperty 'jc.test.measurementFile', System.getProperty('jc.test.measurementFile')
+        }
+
         useJUnitPlatform {
             includeTags 'manual'
         }
@@ -109,7 +123,7 @@ final def JC310b43 = libsSdk + '/jc310b43_kit'
 //
 // JC310b43 supports building also for lower versions (cap.targetsdk).
 // If another SDK is selected, please comment the cap.targetsdk setting.
-final def JC_SELECTED = JC303
+final def JC_SELECTED = JC305u3
 
 javacard {
 
